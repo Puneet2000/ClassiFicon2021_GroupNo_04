@@ -20,7 +20,7 @@ import torchvision.transforms as transforms
 import pandas as pd
 torch.backends.cudnn.benchmark=True
 import torchvision
-def set_seed(seed):
+def set_seed(seed): # set seeds for reproducibility
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
@@ -43,7 +43,7 @@ args = parser.parse_args()
 
 # print(images.shape)
 
-class TripletSmileDataset(torch.utils.data.Dataset):
+class TripletSmileDataset(torch.utils.data.Dataset): #Balanced Dataset
     def __init__(self, transform=None, train=True):
         super(TripletSmileDataset, self).__init__()
         if train:
@@ -60,7 +60,7 @@ class TripletSmileDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return max(max(len(self.df_pos), len(self.df_no)), len(self.df_neg))
-    def __getitem__(self, idx):
+    def __getitem__(self, idx): # Sample example from each class to ensure balance 
 
         idx_pos = idx%len(self.df_pos)
         idx_no = idx%len(self.df_no)
@@ -77,7 +77,7 @@ class TripletSmileDataset(torch.utils.data.Dataset):
 
         return image_pos, image_no, image_neg, 2, 1, 0
 
-class SmileDataset(torch.utils.data.Dataset):
+class SmileDataset(torch.utils.data.Dataset): # Normal Dataset
     def __init__(self, transform=None, train=True):
         super(SmileDataset, self).__init__()
         if train:
@@ -92,7 +92,7 @@ class SmileDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx): 
         row = self.df.iloc[idx]
         image_id = row[0]
         label = self.labels.index(row[1])
@@ -103,7 +103,7 @@ class SmileDataset(torch.utils.data.Dataset):
 
         return image, label
 
-def val(loader, model):
+def val(loader, model): # Validation script
     eps = 0.1
     model.eval()
     correct, total = 0, 0
@@ -111,8 +111,8 @@ def val(loader, model):
     with torch.no_grad():
         for i, (x,y) in enumerate(loader):
             x,y = x.cuda(), y.cuda()
-            x[:,:,:150,:] = -1.
-            score = model(x)
+            x[:,:,:150,:] = -1. # retain lower 1/3rd part
+            score = model(x) # find logits and make prediction
             pred = torch.argmax(score, 1)
             loss = F.cross_entropy(score, y)
             losses.append(loss.item())
@@ -125,6 +125,7 @@ def val(loader, model):
 transform = transforms.Compose([transforms.Resize((224,224)),
 								transforms.ToTensor(), transforms.Normalize([0.5,0.5,0.5],[0.5,0.5,0.5])])
 
+# define all datasets and loaders
 trainset = SmileDataset(transform=transform, train=True)
 triplet_trainset = TripletSmileDataset(transform=transform, train=True)
 triplet_train_loader = torch.utils.data.DataLoader(
@@ -146,12 +147,13 @@ test_loader = torch.utils.data.DataLoader(
         num_workers=2)
 
   
-resnet50 = models.resnet18(pretrained=True)  
+resnet50 = models.resnet18(pretrained=True)  # ImageNet Pretrained resnet18 model 
 num_ftrs = resnet50.fc.in_features
 # resnet50.fc = nn.Linear(num_ftrs, 14)
 
 # resnet50.load_state_dict(torch.load('./celebA_resnet50.pth')['model'])
 resnet50.fc = nn.Linear(num_ftrs, 3)
+# Only tune FC and batchnorm layer
 for name, param in resnet50.named_parameters():
     if 'fc' in name or 'bn' in name:
         # print('Enabling ', name)
@@ -167,7 +169,7 @@ resnet50.eval()
 optimizer = torch.optim.Adam(resnet50.parameters(), lr=0.001)
 scores = []
 best_val = 0.
-d = {'train_acc':[], 'train_loss':[], 'test_acc':[], 'test_loss':[]}
+d = {'train_acc':[], 'train_loss':[], 'test_acc':[], 'test_loss':[]} # dictionary to maintain stats
 for epoch in range(args.epochs):
     losses = []
     correct, total = 0, 0
@@ -178,14 +180,14 @@ for epoch in range(args.epochs):
         x = torch.cat([x_pos, x_no, x_neg],0)
         y = torch.cat([y_pos, y_no, y_neg],0)
         x,y = x.cuda(), y.cuda()
-        x[:,:,:150,:] = -1.
+        x[:,:,:150,:] = -1. # reatin lower 1/3rd part
         torchvision.utils.save_image(x[:10].cpu(), './x.png', normalize=True)
 
         idx= torch.randperm(x.size(0))
         lam = np.random.beta(1,1)
-        x_m = lam*x + (1-lam)*x[idx]
+        x_m = lam*x + (1-lam)*x[idx] # mixup Image
         score = resnet50(x_m)
-        loss = lam*F.cross_entropy(score, y) + (1-lam)*F.cross_entropy(score, y[idx])
+        loss = lam*F.cross_entropy(score, y) + (1-lam)*F.cross_entropy(score, y[idx]) # Mixup Criterion
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -193,7 +195,7 @@ for epoch in range(args.epochs):
         # if i%20==0:
         #     print(i, loss.item())
 
-    train_acc, train_loss = val(train_loader, resnet50)
+    train_acc, train_loss = val(train_loader, resnet50) # evaluate on train and test loader
     test_acc, test_loss = val(test_loader, resnet50)
     d['train_acc'].append(train_acc)
     d['train_loss'].append(train_loss)
