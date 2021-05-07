@@ -1,5 +1,7 @@
 # ClassiFicon2021_GroupNo_04
-
+## Team
+- Puneet Mangla (Github: Puneet2000)
+- Yash Khasbarge (Github: yashkhasbage25)
 ### Requirements
 - PyTorch/Torchvision
 - Numpy, Pandas
